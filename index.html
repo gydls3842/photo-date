@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>찍은날</title>
+<meta name="description" content="사진과 영상의 촬영 날짜를 화질 손실 없이 바꿉니다. 파일은 기기 밖으로 나가지 않아요.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=Share+Tech+Mono&display=swap">
+<style>
+  /* Layout: one narrow column, phone first. Film date-stamp orange is the only accent. */
+  :root {
+    --bg: #f2f3f1;
+    --surface: #ffffff;
+    --ink: #1b1c1a;
+    --muted: #686b66;
+    --line: #dcdeda;
+    --stamp: #e8620c;
+    --stamp-soft: #fde9db;
+    --ok: #2f7d4a;
+    --err: #b3261e;
+    --font-body: "IBM Plex Sans KR", -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    --font-stamp: "Share Tech Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121311; --surface: #1c1d1b; --ink: #ecedea; --muted: #9a9d97; --line: #2e302c; --stamp: #ff8a3d; --stamp-soft: #3a2414; --ok: #6cc28a; --err: #ff8a80; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 var(--font-body);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: max(28px, env(safe-area-inset-top, 0px)) max(40px, env(safe-area-inset-bottom, 0px));
+  }
+  main { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  h1 { margin: 0; font-size: 28px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  h1 .stamp { font-size: 17px; }
+  .lead { margin: 6px 0 0; color: var(--muted); text-wrap: pretty; }
+  .stamp { font-family: var(--font-stamp); color: var(--stamp); letter-spacing: 0.06em; text-shadow: 0 0 6px color-mix(in srgb, var(--stamp) 45%, transparent); white-space: nowrap; }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .label { font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.04em; }
+
+  .drop { border: 1.5px dashed var(--line); border-radius: 12px; padding: 26px 16px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--stamp); background: var(--stamp-soft); }
+  .drop strong { font-size: 16px; }
+  .drop span { color: var(--muted); font-size: 13px; }
+  #picker { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  .when { display: flex; flex-direction: column; gap: 6px; }
+  .when input { font: 500 17px var(--font-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; min-height: 46px; }
+  .tz { font-size: 13px; color: var(--muted); }
+
+  .btn { appearance: none; border: 0; border-radius: 12px; font: 700 16px var(--font-body); padding: 14px 18px; cursor: pointer; width: 100%; }
+  .btn.primary { background: var(--stamp); color: #fff; }
+  .btn.secondary { background: var(--ink); color: var(--bg); }
+  .btn.small { width: auto; font-size: 13px; padding: 7px 12px; border-radius: 8px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn:focus-visible, .drop:focus-visible, input:focus-visible { outline: 2px solid var(--stamp); outline-offset: 2px; }
+
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .item { display: grid; grid-template-columns: 76px 1fr; gap: 12px; align-items: start; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: 0; padding-bottom: 0; }
+  .thumb { position: relative; width: 76px; height: 76px; border-radius: 8px; overflow: hidden; background: var(--bg); display: grid; place-items: center; color: var(--muted); font-size: 11px; }
+  .thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .stamp { position: absolute; right: 4px; bottom: 2px; font-size: 11px; }
+  .meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: 13px; color: var(--muted); }
+  .dates { font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+  .dates .old { color: var(--muted); text-decoration: line-through; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; align-items: center; }
+  .override { font: 13px var(--font-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; max-width: 100%; }
+  .status { font-size: 13px; font-weight: 500; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+
+  .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 14px; }
+  .steps b { color: var(--ink); font-weight: 500; }
+  details { font-size: 14px; color: var(--muted); }
+  details summary { cursor: pointer; color: var(--ink); font-weight: 500; }
+  details p { margin: 8px 0 0; }
+  .note { font-size: 13px; color: var(--muted); margin: 0; text-align: center; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>찍은날 <span class="stamp" id="hero-stamp">'24 5 17</span></h1>
+    <p class="lead">사진과 영상의 촬영 날짜를 원하는 날로 바꿔요. 화면 속 내용은 한 픽셀도 건드리지 않고 날짜 정보만 고쳐요.</p>
+  </header>
+
+  <section class="panel" aria-labelledby="step-files">
+    <div class="label" id="step-files">파일</div>
+    <label class="drop" id="drop" for="picker" tabindex="0">
+      <strong>사진·영상 고르기</strong>
+      <span>JPEG · HEIC · PNG · MOV · MP4 · 여러 개 가능</span>
+    </label>
+    <input id="picker" type="file" multiple accept="image/*,video/*,.heic,.heif,.mov,.mp4,.m4v">
+    <div class="list" id="list" hidden></div>
+  </section>
+
+  <section class="panel" aria-labelledby="step-date">
+    <div class="label" id="step-date">바꿀 날짜</div>
+    <div class="when">
+      <input id="when" type="datetime-local" step="1" aria-describedby="tz">
+      <div class="tz" id="tz"></div>
+    </div>
+    <button class="btn primary" id="apply" disabled>날짜 바꾸기</button>
+    <button class="btn secondary" id="saveAll" hidden>사진 앱에 저장</button>
+  </section>
+
+  <section class="panel" aria-labelledby="how">
+    <div class="label" id="how">아이폰에서 쓰는 법</div>
+    <ol class="steps">
+      <li><b>사진·영상 고르기</b>를 눌러 날짜가 틀린 파일을 골라요.</li>
+      <li>날짜와 시간을 정하고 <b>날짜 바꾸기</b>를 눌러요. 파일마다 다른 날짜를 주려면 각 파일의 <b>따로 정하기</b>를 쓰세요.</li>
+      <li><b>사진 앱에 저장</b>을 누르고 공유 메뉴에서 <b>이미지 저장</b> 또는 <b>비디오 저장</b>을 골라요.</li>
+      <li>사진 앱에서 새로 저장된 항목이 바꾼 날짜 자리에 들어가 있어요. 예전 파일은 직접 지우면 돼요.</li>
+    </ol>
+    <details>
+      <summary>화질이 정말 그대로인가요?</summary>
+      <p>네. 사진이나 영상을 다시 압축하지 않고, 파일 안에 적힌 날짜 글자만 고쳐요. 파일 크기도 거의 그대로예요.</p>
+    </details>
+    <details>
+      <summary>파일이 어디로 올라가나요?</summary>
+      <p>어디에도 올라가지 않아요. 모든 처리가 지금 보고 있는 브라우저 안에서 끝나요.</p>
+    </details>
+    <details>
+      <summary>사진을 고를 때 '옵션'이 보여요</summary>
+      <p>아이폰은 사진 보관함에서 파일을 넘길 때 형식을 바꾸거나 영상을 압축하기도 해요. 선택 화면 위쪽에 '옵션'이 있으면 원본 형식(현재)을 고르면 원본 그대로 넘어와요.</p>
+    </details>
+  </section>
+
+  <p class="note">찍은날 · 파일은 기기 밖으로 나가지 않아요</p>
+</main>
+
+<script src="core.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const list = $('list'), picker = $('picker'), when = $('when'), apply = $('apply'), saveAll = $('saveAll');
+  const items = [];
+  let nextId = 1;
+
+  const pad = n => String(n).padStart(2, '0');
+  const toInput = t => `${t.y}-${pad(t.mo)}-${pad(t.d)}T${pad(t.h)}:${pad(t.mi)}:${pad(t.s)}`;
+  const fromInput = v => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(v || '');
+    if (!m) return null;
+    const t = { y: +m[1], mo: +m[2], d: +m[3], h: +m[4], mi: +m[5], s: +(m[6] || 0) };
+    t.offMin = -new Date(t.y, t.mo - 1, t.d, t.h, t.mi, t.s).getTimezoneOffset();
+    return t;
+  };
+  const nowTm = () => { const d = new Date(); return { y: d.getFullYear(), mo: d.getMonth() + 1, d: d.getDate(), h: d.getHours(), mi: d.getMinutes(), s: 0 }; };
+  const filmStamp = t => `'${String(t.y).slice(-2)} ${t.mo} ${t.d}`;
+  const offLabel = m => `UTC${m >= 0 ? '+' : '−'}${Math.floor(Math.abs(m) / 60)}${Math.abs(m) % 60 ? ':' + pad(Math.abs(m) % 60) : ''}`;
+  const human = t => {
+    const ap = t.h < 12 ? '오전' : '오후', h12 = t.h % 12 || 12;
+    let s = `${t.y}년 ${t.mo}월 ${t.d}일 ${ap} ${h12}:${pad(t.mi)}`;
+    const localOff = -new Date(t.y, t.mo - 1, t.d, t.h, t.mi).getTimezoneOffset();
+    if (t.offMin != null && t.offMin !== localOff) s += ` (${offLabel(t.offMin)})`;
+    return s;
+  };
+  const sizeLabel = n => n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB';
+
+  function updateTz() {
+    const t = fromInput(when.value);
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    $('tz').textContent = t ? `${zone ? zone + ' · ' : ''}${offLabel(t.offMin)} 기준으로 저장돼요` : '날짜와 시간을 골라 주세요';
+    if (t) $('hero-stamp').textContent = filmStamp(t);
+  }
+  when.value = toInput(nowTm());
+  updateTz();
+  when.addEventListener('input', () => { updateTz(); markDirty(); render(); });
+
+  function markDirty() {
+    for (const it of items) if (it.status === 'done') { it.status = 'ready'; it.out = null; }
+  }
+
+  async function addFiles(files) {
+    for (const file of files) {
+      const it = { id: nextId++, file, url: URL.createObjectURL(file), status: 'reading', current: null, override: '', out: null, error: '' };
+      items.push(it);
+      render();
+      try {
+        it.info = await DateFix.detect(file);
+        it.current = await DateFix.readDate(file).catch(() => null);
+        it.status = 'ready';
+      } catch (e) {
+        it.status = 'error';
+        it.error = e instanceof DateFix.DFError ? e.message : '이 파일을 읽을 수 없어요.';
+      }
+      render();
+    }
+  }
+
+  function targetFor(it) { return fromInput(it.override) || fromInput(when.value); }
+
+  function render() {
+    list.hidden = items.length === 0;
+    list.replaceChildren(...items.map(it => {
+      const row = document.createElement('div');
+      row.className = 'item';
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      const isVideo = it.info ? it.info.kind === 'video' : /^video\//.test(it.file.type);
+      if (isVideo) {
+        const v = document.createElement('video');
+        v.src = it.url + '#t=0.1'; v.muted = true; v.playsInline = true; v.preload = 'metadata';
+        thumb.append(v);
+      } else {
+        const img = document.createElement('img');
+        img.src = it.url; img.alt = ''; img.onerror = () => { img.remove(); thumb.prepend(isVideo ? '영상' : '사진'); };
+        thumb.append(img);
+      }
+      const t = targetFor(it);
+      if (t && it.status !== 'error') { const s = document.createElement('span'); s.className = 'stamp'; s.textContent = filmStamp(t); thumb.append(s); }
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const name = document.createElement('div'); name.className = 'name'; name.textContent = it.file.name;
+      const sub = document.createElement('div'); sub.className = 'sub';
+      sub.textContent = `${isVideo ? '영상' : '사진'} · ${sizeLabel(it.file.size)}`;
+      meta.append(name, sub);
+
+      if (it.status === 'error') {
+        const s = document.createElement('div'); s.className = 'status err'; s.textContent = it.error; meta.append(s);
+      } else if (it.status !== 'reading') {
+        const dates = document.createElement('div'); dates.className = 'dates';
+        const old = document.createElement('span'); old.className = 'old'; old.textContent = it.current ? human(it.current) : '날짜 정보 없음';
+        const arrow = document.createElement('span'); arrow.textContent = '→';
+        const neu = document.createElement('span'); neu.textContent = t ? human(t) : '-';
+        dates.append(old, arrow, neu);
+        meta.append(dates);
+
+        const controls = document.createElement('div'); controls.className = 'row';
+        if (it.overrideOpen) {
+          const inp = document.createElement('input');
+          inp.type = 'datetime-local'; inp.step = 1; inp.className = 'override'; inp.id = 'ov-' + it.id;
+          inp.value = it.override || when.value;
+          inp.setAttribute('aria-label', it.file.name + ' 날짜');
+          inp.addEventListener('change', () => { it.override = inp.value; if (it.status === 'done') { it.status = 'ready'; it.out = null; } render(); });
+          controls.append(inp);
+        } else {
+          const b = document.createElement('button'); b.className = 'btn small'; b.textContent = '따로 정하기';
+          b.addEventListener('click', () => { it.overrideOpen = true; it.override = it.override || when.value; render(); });
+          controls.append(b);
+        }
+        if (it.status === 'done') {
+          const s = document.createElement('span'); s.className = 'status ok'; s.textContent = '바뀜';
+          const save = document.createElement('button'); save.className = 'btn small'; save.textContent = '저장';
+          save.addEventListener('click', () => saveFiles([it.out]));
+          controls.append(save, s);
+        } else if (it.status === 'working') {
+          const s = document.createElement('span'); s.className = 'status'; s.textContent = '바꾸는 중…'; controls.append(s);
+        }
+        const rm = document.createElement('button'); rm.className = 'btn small'; rm.textContent = '빼기';
+        rm.addEventListener('click', () => { URL.revokeObjectURL(it.url); items.splice(items.indexOf(it), 1); render(); });
+        controls.append(rm);
+        meta.append(controls);
+      } else {
+        const s = document.createElement('div'); s.className = 'sub'; s.textContent = '읽는 중…'; meta.append(s);
+      }
+      row.append(thumb, meta);
+      return row;
+    }));
+    const ready = items.filter(i => i.status === 'ready').length;
+    const done = items.filter(i => i.status === 'done').length;
+    apply.disabled = !ready || !fromInput(when.value);
+    apply.textContent = ready ? `날짜 바꾸기 (${ready}개)` : '날짜 바꾸기';
+    saveAll.hidden = !done;
+    saveAll.textContent = done > 1 ? `사진 앱에 저장 (${done}개)` : '사진 앱에 저장';
+  }
+
+  apply.addEventListener('click', async () => {
+    apply.disabled = true;
+    for (const it of items.filter(i => i.status === 'ready')) {
+      it.status = 'working'; render();
+      try {
+        const t = targetFor(it);
+        const blob = await DateFix.setDate(it.file, t);
+        const ms = Date.UTC(t.y, t.mo - 1, t.d, t.h, t.mi, t.s) - t.offMin * 60000;
+        it.out = new File([blob], it.file.name, { type: blob.type || it.info.mime, lastModified: ms });
+        it.status = 'done';
+      } catch (e) {
+        it.status = 'error';
+        it.error = e instanceof DateFix.DFError ? e.message : '날짜를 바꾸지 못했어요. 다른 파일로 시도해 주세요.';
+        console.error(e);
+      }
+      render();
+    }
+  });
+
+  async function saveFiles(files) {
+    if (navigator.canShare && navigator.canShare({ files })) {
+      try { await navigator.share({ files }); return; }
+      catch (e) { if (e.name === 'AbortError') return; }
+    }
+    for (const f of files) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(f); a.download = f.name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    }
+  }
+  saveAll.addEventListener('click', () => saveFiles(items.filter(i => i.status === 'done').map(i => i.out)));
+
+  picker.addEventListener('change', () => { addFiles([...picker.files]); picker.value = ''; });
+  const drop = $('drop');
+  drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); picker.click(); } });
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
+  render();
+})();
+</script>
+</body>
+</html>
