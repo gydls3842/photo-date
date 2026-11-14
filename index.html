@@ -235,7 +235,8 @@
     $('tz').textContent = t ? `${zone ? zone + ' · ' : ''}${offLabel(t.offMin)} 기준으로 저장돼요.` : '오른쪽 칸을 눌러 사진에 넣을 날짜와 시간을 골라 주세요.';
   }
   updateTz();
-  when.addEventListener('input', () => { updateTz(); markDirty(); render(); });
+  // iOS may fire only `change` when the date wheel closes.
+  for (const ev of ['input', 'change']) when.addEventListener(ev, () => { updateTz(); markDirty(); render(); });
 
   function markDirty() {
     for (const it of items) if (it.status === 'done') { it.status = 'ready'; it.out = null; }
@@ -276,7 +277,8 @@
     }
 
     const body = el('div', 'grow');
-    body.append(el('div', 'name', it.file.name), el('div', 'sub', `${isVideo ? '영상' : '사진'} · ${sizeLabel(it.file.size)}`));
+    const fmt = it.info ? { jpeg: 'JPEG', png: 'PNG', heif: 'HEIC', video: it.info.mime === 'video/quicktime' ? 'MOV' : 'MP4' }[it.info.format] : '';
+    body.append(el('div', 'name', it.file.name), el('div', 'sub', [isVideo ? '영상' : '사진', fmt, sizeLabel(it.file.size)].filter(Boolean).join(' · ')));
     cell.append(thumb, body);
 
     if (it.status === 'reading') { body.append(el('div', 'badge busy', '읽는 중…')); return cell; }
@@ -287,7 +289,7 @@
     from.append(it.current ? el('s', null, human(it.current)) : document.createTextNode('원래 날짜 정보 없음'));
     body.append(from, el('div', t ? 'to' : 'to empty', t ? '→ ' + human(t) : '→ 바꿀 날짜를 골라 주세요'));
 
-    if (it.status === 'done') cell.append(el('div', 'badge', '✓ 바뀜'));
+    if (it.status === 'done') cell.append(el('div', 'badge', '✓ 바뀜·확인됨'));
     else if (it.status === 'working') cell.append(el('div', 'badge busy', '바꾸는 중…'));
 
     if (it.overrideOpen) {
@@ -353,6 +355,11 @@
         const blob = await DateFix.setDate(it.file, t);
         const ms = Date.UTC(t.y, t.mo - 1, t.d, t.h, t.mi, t.s) - t.offMin * 60000;
         it.out = new File([blob], it.file.name, { type: blob.type || it.info.mime, lastModified: ms });
+        // Read the new file back so a silent failure shows up here, not later in Photos.
+        const back = await DateFix.readDate(it.out).catch(() => null);
+        if (!back || ['y', 'mo', 'd', 'h', 'mi'].some(k => back[k] !== t[k])) {
+          throw new DateFix.DFError(`날짜를 넣었지만 다시 읽어 보니 ${back ? human(back) : '날짜가 없어요'}. 다른 파일로 시도해 주세요.`);
+        }
         it.status = 'done';
       } catch (e) {
         it.status = 'error';
