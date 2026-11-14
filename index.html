@@ -75,6 +75,7 @@
   .dates .old { color: var(--muted); text-decoration: line-through; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; align-items: center; }
   .override { font: 13px var(--font-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; max-width: 100%; }
+  .own { font-size: 13px; font-weight: 500; color: var(--stamp); }
   .status { font-size: 13px; font-weight: 500; }
   .status.ok { color: var(--ok); }
   .status.err { color: var(--err); }
@@ -119,7 +120,7 @@
     <div class="label" id="how">아이폰에서 쓰는 법</div>
     <ol class="steps">
       <li><b>사진·영상 고르기</b>를 눌러 날짜가 틀린 파일을 골라요.</li>
-      <li>날짜와 시간을 정하고 <b>날짜 바꾸기</b>를 눌러요. 파일마다 다른 날짜를 주려면 각 파일의 <b>따로 정하기</b>를 쓰세요.</li>
+      <li>날짜와 시간을 정하고 <b>날짜 바꾸기</b>를 눌러요. 파일마다 다른 날짜를 주려면 각 파일의 <b>이 파일만 다른 날짜로</b>를 누르세요.</li>
       <li><b>사진 앱에 저장</b>을 누르고 공유 메뉴에서 <b>이미지 저장</b> 또는 <b>비디오 저장</b>을 골라요.</li>
       <li>사진 앱에서 새로 저장된 항목이 바꾼 날짜 자리에 들어가 있어요. 예전 파일은 직접 지우면 돼요.</li>
     </ol>
@@ -173,10 +174,9 @@
   function updateTz() {
     const t = fromInput(when.value);
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-    $('tz').textContent = t ? `${zone ? zone + ' · ' : ''}${offLabel(t.offMin)} 기준으로 저장돼요` : '날짜와 시간을 골라 주세요';
-    if (t) $('hero-stamp').textContent = filmStamp(t);
+    $('tz').textContent = t ? `${zone ? zone + ' · ' : ''}${offLabel(t.offMin)} 기준으로 저장돼요` : '위 칸을 눌러 사진에 넣을 날짜와 시간을 골라 주세요';
+    $('hero-stamp').textContent = filmStamp(t || nowTm());
   }
-  when.value = toInput(nowTm());
   updateTz();
   when.addEventListener('input', () => { updateTz(); markDirty(); render(); });
 
@@ -236,20 +236,26 @@
         const dates = document.createElement('div'); dates.className = 'dates';
         const old = document.createElement('span'); old.className = 'old'; old.textContent = it.current ? human(it.current) : '날짜 정보 없음';
         const arrow = document.createElement('span'); arrow.textContent = '→';
-        const neu = document.createElement('span'); neu.textContent = t ? human(t) : '-';
+        const neu = document.createElement('span'); neu.textContent = t ? human(t) : '바꿀 날짜를 골라 주세요';
         dates.append(old, arrow, neu);
         meta.append(dates);
 
         const controls = document.createElement('div'); controls.className = 'row';
+        const reset = () => { if (it.status === 'done') { it.status = 'ready'; it.out = null; } };
         if (it.overrideOpen) {
+          const own = document.createElement('label'); own.className = 'own'; own.htmlFor = 'ov-' + it.id;
+          own.textContent = '이 파일만';
           const inp = document.createElement('input');
           inp.type = 'datetime-local'; inp.step = 1; inp.className = 'override'; inp.id = 'ov-' + it.id;
           inp.value = it.override || when.value;
-          inp.setAttribute('aria-label', it.file.name + ' 날짜');
-          inp.addEventListener('change', () => { it.override = inp.value; if (it.status === 'done') { it.status = 'ready'; it.out = null; } render(); });
-          controls.append(inp);
+          inp.addEventListener('change', () => { it.override = inp.value; reset(); render(); });
+          const cancel = document.createElement('button'); cancel.className = 'btn small'; cancel.textContent = '전체 날짜 따르기';
+          cancel.addEventListener('click', () => { it.overrideOpen = false; it.override = ''; reset(); render(); });
+          const ownRow = document.createElement('div'); ownRow.className = 'row';
+          ownRow.append(own, inp, cancel);
+          meta.append(ownRow);
         } else {
-          const b = document.createElement('button'); b.className = 'btn small'; b.textContent = '따로 정하기';
+          const b = document.createElement('button'); b.className = 'btn small'; b.textContent = '이 파일만 다른 날짜로';
           b.addEventListener('click', () => { it.overrideOpen = true; it.override = it.override || when.value; render(); });
           controls.append(b);
         }
@@ -261,7 +267,7 @@
         } else if (it.status === 'working') {
           const s = document.createElement('span'); s.className = 'status'; s.textContent = '바꾸는 중…'; controls.append(s);
         }
-        const rm = document.createElement('button'); rm.className = 'btn small'; rm.textContent = '빼기';
+        const rm = document.createElement('button'); rm.className = 'btn small'; rm.textContent = '목록에서 빼기';
         rm.addEventListener('click', () => { URL.revokeObjectURL(it.url); items.splice(items.indexOf(it), 1); render(); });
         controls.append(rm);
         meta.append(controls);
@@ -273,8 +279,9 @@
     }));
     const ready = items.filter(i => i.status === 'ready').length;
     const done = items.filter(i => i.status === 'done').length;
-    apply.disabled = !ready || !fromInput(when.value);
-    apply.textContent = ready ? `날짜 바꾸기 (${ready}개)` : '날짜 바꾸기';
+    const allHaveDate = items.filter(i => i.status === 'ready').every(i => targetFor(i));
+    apply.disabled = !ready || !allHaveDate;
+    apply.textContent = ready && !allHaveDate ? '바꿀 날짜를 먼저 골라 주세요' : ready ? `날짜 바꾸기 (${ready}개)` : '날짜 바꾸기';
     saveAll.hidden = !done;
     saveAll.textContent = done > 1 ? `사진 앱에 저장 (${done}개)` : '사진 앱에 저장';
   }
